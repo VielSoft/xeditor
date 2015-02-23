@@ -22,7 +22,8 @@
 
     editTriggers: [
       '.node h2 .edit-field',
-      '.page-node- h1.title'
+      '.page-node- h1.title',
+      '.node .field-name-title h2'
     ],
 
     // Makes sure that the triggers that triggers

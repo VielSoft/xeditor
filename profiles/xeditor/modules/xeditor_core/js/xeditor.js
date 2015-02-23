@@ -10,7 +10,10 @@
   Drupal.xeditor = {
 
     init: function() {
-      this.applyCKEEvents();
+      // Initialize settings for node title.
+      this.applyCKEEventsTitle();
+      // Initialize settings for node body.
+      this.applyCKEEventsBody();
     },
 
     // Unselects everything in the window
@@ -94,8 +97,51 @@
       head.appendChild(script);
     },
 
+    // Set the settings for title field.
     setTitleSettings: function(editor) {
       console.warn('Setting title settings for CKE');
+
+      // Remove unnecessary plugins to make the editor simpler.
+      var unwantedPlugins = [
+        'colorbutton',
+        'find',
+        'flash',
+        'font',
+        'forms',
+        'iframe',
+        'image',
+        'newpage',
+        'removeformat',
+        'smiley',
+        'specialchar',
+        'stylescombo',
+        'templates',
+        'about',
+        'pastefromword',
+        'pastetext',
+        'selectall',
+        'basicstyles',
+        'link'
+      ];
+
+      editor.config.removePlugins = unwantedPlugins.join(',');
+
+      // Rearrange the layout of the toolbar.
+      editor.config.toolbarGroups = [
+        { name: 'editing',    groups: [ 'basicstyles' ] },
+        { name: 'undo' },
+        { name: 'clipboard',  groups: [ 'selection', 'clipboard' ] },
+      ];
+    },
+
+    shouldBeHandledAsTitle: function($el) {
+      var titles = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+      return ($el.is(titles) || $el.hasAncestor(titles));
+    },
+
+    // Set the settings for body field.
+    setBodySettings: function(editor) {
+      console.warn('Setting body settings for CKE');
 
       // Remove unnecessary plugins to make the editor simpler.
       var unwantedPlugins = [
@@ -115,7 +161,8 @@
       ];
 
       editor.config.removePlugins = unwantedPlugins.join(',');
-
+      // Allowed tags.
+      editor.config.extraAllowedContent = 'iframe[*]; p div(*); embed(id, width, height, flashvars); blockquote(*); script(*)';
       // Rearrange the layout of the toolbar.
       editor.config.toolbarGroups = [
         { name: 'editing',    groups: [ 'basicstyles', 'links' ] },
@@ -123,29 +170,10 @@
         { name: 'clipboard',  groups: [ 'selection', 'clipboard' ] },
         { name: 'about' }
       ];
-      editor.ui.addButton('Save', { label : 'Save changes', command : 'save', toolbar: 'basicstyles,1' });
-    },
-
-    shouldBeHandledAsTitle: function($el) {
-      var titles = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
-      return ($el.is(titles) || $el.hasAncestor(titles));
-    },
-
-    setBodySettings: function(editor) {
-      console.warn('Setting body settings for CKE');
-
-      // Convert type to object.
-      var toolbar = $.parseJSON(Drupal.settings.ck_toolbar.plugins);
-
-      // Associate the user-defined plugins.
-      // Uncomment the below lines to enable the user-defined toolbar.
-      //editor.config.toolbar = [
-      //    toolbar
-      //];
     },
 
     shouldBeHandledAsBody: function($el) {
-      var body = ['div', 'div.field-name-body'];
+      var body = $('.field-name-body');
       return ($el.is(body) || $el.hasAncestor(body));
     },
 
@@ -157,7 +185,7 @@
       if (this.shouldBeHandledAsTitle($el)) {
         return 'TITLE';
       }
-      else if (this.shouldBeHandledAsBody($el)) {
+      else if ($el.hasAncestor('field-name-body')) {
         return 'BODY';
       }
       else if ($el.hasAncestor('field-type-taxonomy-term-reference')) {
@@ -229,60 +257,116 @@
         //nid and field attributes will be used for specific fields
     },
 
-    applyCKEEvents: function() {
+    applyCKEEventsTitle: function() {
       var that = this;
 
-      CKEDITOR.plugins.registered['save'] = {
-        init : function(editor) {
-          var command = editor.addCommand('save', {
-            modes : { wysiwyg:1, source:1 },
-            exec : function(editor) {
-              var html = editor.getData(),
-               nidAttr = that.getNid($(editor.element.$)),
-                 field = that.deduceField($(editor.element.$)),
-                  nid  = that.stripNid(nidAttr);
+      if (typeof CKEDITOR !== 'undefined') {
 
-              // Fires save event, then saves and unfocus/blur/unselects everything
-              editor.fire('save');
-              that.saveContent(nid, field, html);
-              editor.fire('blur');
-              that.unselectAll();
-              that.focusDefault();
-              that.statusNotification(nid, field);
-            }
+        CKEDITOR.plugins.registered['save'] = {
+          init : function(editor) {
+            var command = editor.addCommand('save', {
+              modes : { wysiwyg:1, source:1 },
+              exec : function(editor) {
+                var html = editor.getData(),
+                 nidAttr = that.getNid($(editor.element.$)),
+                   field = that.deduceField($(editor.element.$)),
+                    nid  = that.stripNid(nidAttr);
+
+                // Fires save event, then saves and unfocus/blur/unselects everything
+                editor.fire('save');
+                that.saveContent(nid, field, html);
+                editor.fire('blur');
+                that.unselectAll();
+                that.focusDefault();
+                that.statusNotification(nid, field);
+              }
+            });
+
+            editor.ui.addButton('Save', { label : 'Save changes', command : 'save', toolbar: 'basicstyles,1' });
+          }
+        };
+
+        CKEDITOR.on('instanceCreated', function(e) {
+          var editor  = e.editor,
+              element = editor.element;
+
+          if (Drupal.xeditor.shouldBeHandledAsTitle($(element.$))) {
+            editor.on('configLoaded', function() {
+              that.setTitleSettings(editor);
+            });
+          }
+
+          editor.on('save', function(e) {
+            var editor  = e.editor,
+              dataProcessor = editor.dataProcessor;
+
+             // Strip unwanted element.
+            editor.config.removeFormatTags = 'p';
+            editor.config.autoParagraph = false;
           });
-
-          editor.ui.addButton('Save', { label : 'Save changes', command : 'save', toolbar: 'basicstyles,1' });
-        }
-      };
-
-      CKEDITOR.on('instanceCreated', function(e) {
-        var editor  = e.editor,
-            element = editor.element;
-
-        if (Drupal.xeditor.shouldBeHandledAsTitle($(element.$))) {
-          editor.on('configLoaded', function() {
-            that.setTitleSettings(editor);
-          });
-        }
-
-        if (Drupal.xeditor.shouldBeHandledAsBody($(element.$))) {
-          editor.on('configLoaded', function() {
-            that.setBodySettings(editor);
-          });
-        }
-
-        editor.on('save', function(e) {
         });
-      });
 
-      CKEDITOR.on("instanceReady", function(e) {
-        // Simple shout-out about what instances exists atm.
-        for(var instanceName in CKEDITOR.instances) {
-          // console.log(CKEDITOR.instances[instanceName]);
-        }
-      });
+        CKEDITOR.on("instanceReady", function(e) {
+          // Simple shout-out about what instances exists atm.
+          for(var instanceName in CKEDITOR.instances) {
+            // console.log(CKEDITOR.instances[instanceName]);
+          }
+        });
+
+      }
+    },
+
+    applyCKEEventsBody: function() {
+      var that = this;
+
+      if (typeof CKEDITOR !== 'undefined') {
+
+        CKEDITOR.plugins.registered['save'] = {
+          init : function(editor) {
+            var command = editor.addCommand('save', {
+              modes : { wysiwyg:1, source:1 },
+              exec : function(editor) {
+                var html = editor.getData(),
+                 nidAttr = that.getNid($(editor.element.$)),
+                   field = that.deduceField($(editor.element.$)),
+                    nid  = that.stripNid(nidAttr);
+
+                // Fires save event, then saves and unfocus/blur/unselects everything
+                editor.fire('save');
+                that.saveContent(nid, field, html);
+                editor.fire('blur');
+                that.unselectAll();
+                that.focusDefault();
+                that.statusNotification(nid, field);
+              }
+            });
+
+            editor.ui.addButton('Save', { label : 'Save changes', command : 'save', toolbar: 'basicstyles,1' });
+          }
+        };
+
+        CKEDITOR.on('instanceCreated', function(e) {
+          var editor  = e.editor,
+              element = editor.element;
+
+          if (Drupal.xeditor.shouldBeHandledAsBody($(element.$))) {
+            editor.on('configLoaded', function() {
+              that.setBodySettings(editor);
+            });
+          }
+
+          editor.on('save', function(e) {});
+        });
+
+        CKEDITOR.on("instanceReady", function(e) {
+          // Simple shout-out about what instances exists atm.
+          for(var instanceName in CKEDITOR.instances) {
+            // console.log(CKEDITOR.instances[instanceName]);
+          }
+        });
+      }
     }
+
   };
 
 })(jQuery);
